@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Paper Trading — Entry overlay demo</title>
+<style>
+/* Paper Trading — Entry overlay + kéo-để-đặt TP/SL.
+   --entry-y điều khiển vị trí entry line, cụm nút và tag giá.
+   Vị thế, TP, SL dùng chung kích thước ô (--cell-h, --w-*) nên luôn đều và thẳng hàng. */
+:root {
+  --chart-bg: #0a0e14;
+  --grid: #1b212a;
+  --green: #20a860;
+  --red: #e0301e;
+  --candle-red: #f0453a;
+  --tp: var(--green);   /* TP/SL dùng chung màu với ô PnL */
+  --sl: var(--red);
+  --edge: rgba(255, 255, 255, .85);
+  --close-bg: #c8c8c8;
+  --cell-h: 24px;
+  --line: 1px;      /* MỘT độ dày duy nhất cho viền ngoài + line chia giữa các ô (1px mảnh – 2px dày) */
+  --w-pnl: 108px;
+  --w-qty: 30px;   /* tối thiểu; tự dài ra khi số lượng lên hàng chục */
+  --w-close: 28px;
+  --font: Inter, "Segoe UI", Roboto, system-ui, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 24px; background: #050709; font-family: var(--font); }
+
+.entry-preview {
+  --entry-y: 140px;
+  --tag-w: 85px;
+  --tag-gap: 16px;
+  --tags-right: calc(var(--tag-w) + var(--tag-gap) + 24px);
+  position: relative;
+  width: 870px;
+  max-width: 100%;
+  height: 280px;
+  overflow: hidden;
+  background-color: var(--chart-bg);
+  background-image:
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+    linear-gradient(0deg, var(--grid) 1px, transparent 1px);
+  background-size: 225px 100%, 100% 60px;
+  background-position: 83px 0, 0 0;
+}
+
+/* Nến */
+.candle { position: absolute; left: var(--x); top: var(--t); height: var(--h); width: 19px; }
+.candle::before { content: ""; position: absolute; left: 9px; top: 0; bottom: 0; width: 1px; background: var(--candle-red); }
+.candle span { position: absolute; left: 0; top: var(--bt); height: var(--bh); width: 19px; background: var(--candle-red); }
+
+/* Entry line: nét đứt trơn */
+.entry-line {
+  position: absolute; top: var(--entry-y); left: 0; right: 0; height: 1px;
+  background: repeating-linear-gradient(90deg, rgba(222, 227, 234, .85) 0 7px, transparent 7px 12px);
+}
+
+/* Tag giá (entry / TP / SL) — cùng kích thước */
+.entry-price, .order-price {
+  position: absolute; top: var(--entry-y); right: var(--tag-gap);
+  width: var(--tag-w); height: calc(var(--cell-h) + 2 * var(--line)); margin-top: calc(-0.5 * (var(--cell-h) + 2 * var(--line)));
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font: 500 14px var(--font); font-variant-numeric: tabular-nums;
+}
+.entry-price { background: #5b1812; border: var(--line) solid #d9362b; }
+.entry-preview[data-pnl="win"] .entry-price { background: #0f3d2a; border-color: #2ecc82; }
+
+/* ===== Tag dùng chung: [ PnL | số lượng | × ] ===== */
+.entry-controls {
+  position: absolute; top: var(--entry-y); z-index: 3;
+  right: var(--tags-right); margin-top: calc(-0.5 * (var(--cell-h) + 2 * var(--line)));
+  display: inline-flex;
+}
+.entry-position, .order-tag {
+  position: relative; display: inline-flex; align-items: stretch;
+  height: calc(var(--cell-h) + 2 * var(--line));
+  border-radius: 2px;
+  font: 700 13px var(--font);
+}
+/* Không dùng overflow:hidden (clip anti-alias làm mép nhoè/dày ở pixel lẻ) — bo góc đặt trên ô đầu/cuối */
+.entry-position > :first-child, .order-tag > :first-child { border-radius: 2px 0 0 2px; }
+.entry-position > :last-child, .order-tag > :last-child { border-radius: 0 2px 2px 0; }
+/* Khung đen vẽ 1 lần, phủ lên trên các ô -> viền 4 phía luôn bằng nhau, không bị làm tròn lệch từng ô */
+.entry-position::after, .order-tag::after {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  border: var(--line) solid #000; border-radius: 2px;
+}
+.entry-position > *, .order-tag > * {
+  display: inline-flex; align-items: center; justify-content: center;
+  align-self: stretch; height: auto; margin: 0; padding: var(--line) 8px; border: 0; border-radius: 0;
+  font: inherit; line-height: 1; white-space: nowrap;
+}
+
+/* Zoom lẻ (125%, 150%...): bo góc làm Chrome vẽ viền bằng path anti-alias -> nhoè. Tắt bo để viền luôn 1 pixel sắc nét. */
+.entry-preview.px-snap .entry-position, .entry-preview.px-snap .order-tag,
+.entry-preview.px-snap .entry-position::after, .entry-preview.px-snap .order-tag::after,
+.entry-preview.px-snap .entry-position > *, .entry-preview.px-snap .order-tag > * { border-radius: 0; }
+
+.entry-pnl, .order-pnl {
+  position: relative; min-width: var(--w-pnl); padding: 0 16px; cursor: ns-resize; touch-action: none; user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+.entry-position > * + *, .order-tag > * + * { border-left: var(--line) solid #000; }
+.entry-quantity, .order-qty { flex: none; min-width: var(--w-qty); padding: 0 8px; }
+.entry-close, .order-close { flex: none; width: var(--w-close); padding: var(--line) 0 0; position: relative; font-size: 0; cursor: pointer; background: var(--close-bg); color: #222; }
+.entry-close:hover, .order-close:hover { background: #fff; }
+/* Dấu × vẽ bằng CSS để luôn nằm chính giữa ô */
+.entry-close::before, .entry-close::after, .order-close::before, .order-close::after {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 12px; height: 1.5px; background: currentColor;
+}
+.entry-close::before, .order-close::before { transform: translate(-50%, -50%) rotate(45deg); }
+.entry-close::after, .order-close::after { transform: translate(-50%, -50%) rotate(-45deg); }
+.entry-position button { cursor: pointer; }
+.entry-position .entry-pnl { cursor: ns-resize; }
+.entry-position button:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+
+/* Màu vị thế */
+.entry-pnl { background: var(--green); color: #fff; }
+.entry-preview[data-pnl="loss"] .entry-pnl { background: var(--red); }
+.entry-quantity { background: var(--green); color: #111; }
+.entry-preview[data-pnl="loss"] .entry-quantity { background: var(--red); }
+
+/* Tay nắm kéo: chấm đen nhỏ */
+.entry-grip, .order-grip {
+  position: absolute; left: 4px; top: 50%; width: 3px; height: 18px; margin: 0; transform: translateY(-50%);
+  background: radial-gradient(circle, #000 .62px, transparent .92px) 0 0 / 3px 3px;
+}
+
+/* Lệnh TP / SL (tạo bằng JS khi kéo) */
+.order { --c: var(--tp); --pbg: #0f3d2a; position: absolute; left: 0; right: 0; top: var(--y); height: 0; z-index: 2; }
+.order.sl { --c: var(--sl); --pbg: #5b1812; }
+.order-line {
+  position: absolute; left: 0; right: 0; top: 0; height: 1px;
+  background: repeating-linear-gradient(90deg, var(--c) 0 6px, transparent 6px 10px);
+}
+.order-tag { position: absolute; top: 0; right: var(--tags-right); margin-top: calc(-0.5 * (var(--cell-h) + 2 * var(--line))); }
+.order-pnl, .order-qty { background: var(--c); }
+.order-pnl { color: #fff; }
+.order-qty { color: #111; }
+.order-price { top: 0; background: var(--pbg); border: var(--line) solid var(--c); }
+
+.entry-preview.closed .entry-controls, .entry-preview.closed .entry-line,
+.entry-preview.closed .entry-price, .entry-preview.closed .order { display: none; }
+body.entry-dragging { cursor: ns-resize; user-select: none; }
+
+@media (max-width: 520px) { .entry-preview { --tags-right: calc(var(--tag-w) + var(--tag-gap) + 8px); } }
+
+body{min-height:100vh;display:flex;flex-direction:column;align-items:center;gap:20px;padding:32px 16px;color:#c9d1dc}
+h1{font:600 15px/20px var(--font);margin:0;color:#e6ebf2}
+.wrap{width:870px;max-width:100%}
+.panel{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:center;justify-content:center;background:#10141b;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px 18px;font:500 13px var(--font)}
+.seg{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:6px;overflow:hidden}
+.seg button{background:#1a202a;color:#9aa5b3;border:0;padding:6px 12px;font:600 12px var(--font);cursor:pointer}
+.seg button.on{background:#2a313d;color:#fff}
+.panel input[type=range]{width:200px;accent-color:#20a860}
+.reset{background:#1a202a;color:#e6ebf2;border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:6px 12px;font:600 12px var(--font);cursor:pointer}
+.val{font-variant-numeric:tabular-nums;min-width:76px;display:inline-block;color:#e6ebf2}
+.hint{font:13px/1.5 var(--font);color:#8b95a3;margin:0;text-align:center;max-width:640px}
+</style>
+</head>
+<body>
+<h1>Paper Trading — kéo để đặt TP / SL</h1>
+<div class="wrap"><div class="entry-preview" data-side="long" data-pnl="loss" aria-label="Vị thế Long đang giữ">
+  <div class="candle" style="--x:277px;--t:92px;--h:48px;--bt:0px;--bh:20px" aria-hidden="true"><span></span></div>
+  <div class="candle" style="--x:299px;--t:98px;--h:44px;--bt:13px;--bh:27px" aria-hidden="true"><span></span></div>
+  <div class="candle" style="--x:322px;--t:134px;--h:10px;--bt:3px;--bh:5px" aria-hidden="true"><span></span></div>
+
+  <div class="entry-line" aria-hidden="true"></div>
+  <div class="entry-price" aria-hidden="true">4,763.30</div>
+
+  <div class="entry-controls" role="group" aria-label="Điều khiển vị thế">
+    <div class="entry-position">
+      <button class="entry-pnl" type="button" title="Kéo lên/xuống để đặt TP/SL"><span class="entry-grip" aria-hidden="true"></span><span class="entry-pnl-text">-$2.50</span></button>
+      <button class="entry-quantity" type="button" title="Vị thế Long 1 hợp đồng">1</button>
+      <button class="entry-close" type="button" aria-label="Đóng vị thế" title="Đóng vị thế">×</button>
+    </div>
+  </div>
+</div></div>
+<div class="panel">
+  <div class="seg" id="side"><button data-v="short">Short</button><button data-v="long" class="on">Long</button></div>
+  <label>Giá hiện tại <input id="px" type="range" min="4755" max="4772" step="0.25" value="4762.8"> <span class="val" id="pxv">4,762.80</span></label>
+  <button class="reset" id="reset" type="button">Reset</button>
+</div>
+<p class="hint">Rê chuột vào ô PnL của vị thế rồi <b>kéo lên hoặc xuống</b>. Long: lên = TP, xuống = SL. Short: ngược lại. Kéo ô PnL của TP/SL để dời; kéo line về trùng line entry hoặc bấm × để xoá. MES: 1 điểm = $5.</p>
+<script>
+/* Kéo từ ô PnL của vị thế để tạo TP/SL.
+   Long: kéo lên = TP, kéo xuống = SL. Short: ngược lại.
+   Kéo ô PnL của TP/SL để dời, bấm × để huỷ.
+   Line TP/SL kéo về trùng line entry (line PnL) -> xoá lệnh đó (SL hoặc TP). */
+(function () {
+  'use strict';
+  var root = document.querySelector('.entry-preview');
+  if (!root) return;
+
+  // Chỉnh theo hợp đồng của bạn
+  var C = { entry: 4763.30, point: 5, qty: 1, ppp: 8, tick: 0.25, pad: 14 }; // ppp = px / 1 điểm giá
+
+  var side = root.dataset.side || 'long';
+  var last = 4762.80;
+  var entryY = parseFloat(getComputedStyle(root).getPropertyValue('--entry-y')) || 100;
+  var posPnl = root.querySelector('.entry-pnl');
+  var posPnlText = root.querySelector('.entry-pnl-text');
+  var posQty = root.querySelector('.entry-quantity');
+  var orders = { tp: null, sl: null };
+  var drag = null;
+
+  function fmt(n) { return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function money(v) { return (v < 0 ? '-$' : '$') + fmt(Math.abs(v)); }
+  // Snap tâm tag (cao H px) để mép trên rơi đúng pixel màn hình -> viền TP/SL/PnL sắc nét, giống nhau ở mọi zoom
+  var H = 26;
+  // Làm tròn mọi kích thước của tag về pixel màn hình thật (zoom lẻ như 125% cũng không bị nhoè/lệch viền)
+  function applyGrid() {
+    var dpr = window.devicePixelRatio || 1;
+    function q(v) { return Math.max(1, Math.round(v * dpr)) / dpr; }
+    var line = dpr >= 2 ? 1 : Math.ceil(64 / dpr) / 64, cell = q(24); // viền = đúng 1 pixel màn hình (>=2x giữ 1px CSS)
+    var vars = { '--line': line, '--cell-h': cell, '--w-pnl': q(108), '--w-qty': q(30), '--w-close': q(28), '--tag-w': q(85), '--tag-gap': q(16) };
+    // Snap theo chiều ngang: mép phải của tag giá và của cụm [PnL | SL | ×] rơi đúng pixel màn hình
+    var rr = root.getBoundingClientRect().right;
+    function snapX(off) { return rr - Math.round((rr - off) * dpr) / dpr; } // off = khoảng cách từ mép phải root
+    var gap = snapX(q(16));
+    vars['--tag-gap'] = gap;
+    for (var k in vars) root.style.setProperty(k, vars[k] + 'px');
+    var tagsRight = snapX(gap + q(85) + q(window.innerWidth <= 520 ? 8 : 24));
+    root.style.setProperty('--tags-right', tagsRight + 'px');
+    H = cell + 2 * line;
+    root.classList.toggle('px-snap', Math.abs(dpr - Math.round(dpr)) > 0.01);
+  }
+  function snapY(y) {
+    var dpr = window.devicePixelRatio || 1, top = root.getBoundingClientRect().top;
+    return Math.round((top + y - H / 2) * dpr) / dpr - top + H / 2;
+  }
+  function yFor(p) { return snapY(entryY - (p - C.entry) * C.ppp); }
+  function snapEntry() {
+    applyGrid();
+    root.style.removeProperty('--entry-y');
+    entryY = parseFloat(getComputedStyle(root).getPropertyValue('--entry-y')) || 100;
+    entryY = snapY(entryY);
+    root.style.setProperty('--entry-y', entryY + 'px');
+    ['tp', 'sl'].forEach(function (t) { if (orders[t]) render(orders[t]); });
+  }
+  function snap(p) { return Math.round(p / C.tick) * C.tick; }
+  function est(p) { return (side === 'long' ? p - C.entry : C.entry - p) * C.point * C.qty; }
+  function clampY(y) { return Math.min(Math.max(y, C.pad), root.clientHeight - C.pad); }
+  function priceFor(y) { return snap(C.entry + (entryY - clampY(y)) / C.ppp); }
+
+  // TP phải nằm phía lãi, SL phía lỗ (cách entry ít nhất 1 tick)
+  function valid(type, p) {
+    var profit = side === 'long' ? 1 : -1;
+    var dir = type === 'tp' ? profit : -profit;
+    if ((p - C.entry) * dir < C.tick) p = C.entry + dir * C.tick;
+    return p;
+  }
+
+  function render(o) {
+    o.el.style.setProperty('--y', yFor(o.price) + 'px');
+    o.pnl.textContent = '~ ' + money(est(o.price));
+    o.px.textContent = fmt(o.price);
+  }
+  function removeOrder(o) { if (!o) return; o.el.remove(); orders[o.type] = null; }
+  function clearOrders() { removeOrder(orders.tp); removeOrder(orders.sl); }
+
+  function makeOrder(type) {
+    var el = document.createElement('div');
+    el.className = 'order ' + type;
+    el.innerHTML =
+      '<div class="order-line"></div>' +
+      '<div class="order-tag">' +
+        '<div class="order-pnl" title="Kéo để dời ' + (type === 'tp' ? 'Take Profit' : 'Stop Loss') + '"><span class="order-grip"></span><span class="order-pnl-text"></span></div>' +
+        '<div class="order-qty">' + C.qty + '</div>' +
+        '<button class="order-close" type="button" aria-label="Huỷ ' + (type === 'tp' ? 'TP' : 'SL') + '">×</button>' +
+      '</div>' +
+      '<div class="order-price"></div>';
+    root.appendChild(el);
+    var o = { type: type, el: el, price: C.entry, pnl: el.querySelector('.order-pnl-text'), px: el.querySelector('.order-price') };
+    el.querySelector('.order-pnl').addEventListener('pointerdown', function (e) {
+      if (e.button !== 0) return; e.preventDefault(); startDrag({ mode: 'move', o: o, base: yFor(o.price) }, e);
+    });
+    el.querySelector('.order-close').addEventListener('click', function () { removeOrder(o); });
+    orders[type] = o;
+    return o;
+  }
+
+  function startDrag(d, e) { d.startY = e.clientY - root.getBoundingClientRect().top; drag = d; document.body.classList.add('entry-dragging'); }
+
+  posPnl.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0) return; e.preventDefault(); startDrag({ mode: 'create', made: {}, base: entryY }, e);
+  });
+
+  window.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    // Mọi thứ tính theo LINE (không theo tag): line của lệnh = vị trí gốc + quãng chuột đã kéo
+    var y = drag.base + (e.clientY - root.getBoundingClientRect().top - drag.startY);
+    // Line TP/SL trùng line entry (cách < 1 tick) -> XOÁ lệnh đó. Tag có thể chồng lên ô PnL, chưa xoá khi line chưa trùng.
+    var inPnlZone = Math.abs(y - entryY) < C.ppp * C.tick;
+    var lineType = ((y < entryY) === (side === 'long')) ? 'tp' : 'sl';   // line nằm phía lãi = TP, phía lỗ = SL
+    if (drag.mode === 'move') {
+      if (inPnlZone || lineType !== drag.o.type) { removeOrder(drag.o); endDrag(); return; }  // trùng hoặc vượt qua entry line
+      drag.o.price = valid(drag.o.type, priceFor(y));
+      render(drag.o);
+      return;
+    }
+    // create: line chưa rời khỏi entry line thì chưa tạo; kéo ngược về trùng entry line thì xoá
+    if (inPnlZone) {
+      if (drag.type && orders[drag.type]) { removeOrder(orders[drag.type]); drag.made[drag.type] = false; }
+      return;
+    }
+    var p = priceFor(y);
+    var type = lineType;
+    // Hướng kéo đầu tiên quyết định TP hay SL và được khoá cho tới khi thả chuột:
+    // kéo xuống (Long) chỉ điều khiển SL; kéo ngược lên chỉ để tắt SL, không bao giờ tạo/đụng tới TP.
+    if (!drag.type) drag.type = type;
+    if (type !== drag.type) {            // đã vượt sang phía bên kia entry -> tắt lệnh vừa tạo, không làm gì khác
+      if (orders[drag.type]) { removeOrder(orders[drag.type]); drag.made[drag.type] = false; }
+      return;
+    }
+    var o = orders[type];
+    if (!o) { o = makeOrder(type); drag.made[type] = true; }
+    o.price = valid(type, p);
+    render(o);
+  });
+
+  function endDrag() { drag = null; document.body.classList.remove('entry-dragging'); }
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+
+  root.querySelector('.entry-close').addEventListener('click', function () { clearOrders(); root.classList.add('closed'); });
+
+  function setPrice(p) {
+    last = p;
+    var v = (side === 'long' ? p - C.entry : C.entry - p) * C.point * C.qty;
+    posPnlText.textContent = (v < 0 ? '-$' : '$') + fmt(Math.abs(v));
+    root.dataset.pnl = v < 0 ? 'loss' : 'win';
+  }
+  function setSide(s) {
+    side = s; root.dataset.side = s;
+    posQty.textContent = (s === 'short' ? '-' : '') + C.qty;
+    clearOrders(); setPrice(last);
+  }
+
+  window.entryOverlay = {
+    setPrice: setPrice,
+    setSide: setSide,
+    clearOrders: clearOrders,
+    setClosed: function (b) { root.classList.toggle('closed', !!b); if (b) clearOrders(); }
+  };
+  setPrice(last);
+  snapEntry();
+  window.addEventListener('resize', snapEntry);
+})();
+
+(function(){
+  var px=document.getElementById('px'), pxv=document.getElementById('pxv');
+  function fmt(n){return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+  px.addEventListener('input',function(){var p=parseFloat(px.value);pxv.textContent=fmt(p);entryOverlay.setPrice(p)});
+  document.getElementById('side').addEventListener('click',function(e){
+    var b=e.target.closest('button'); if(!b) return;
+    this.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});
+    entryOverlay.setSide(b.dataset.v);
+  });
+  document.getElementById('reset').addEventListener('click',function(){entryOverlay.clearOrders();entryOverlay.setClosed(false)});
+})();
+</script>
+</body>
+</html>

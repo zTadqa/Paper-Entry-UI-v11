@@ -1,0 +1,141 @@
+/* Paper Trading — Entry overlay + kéo-để-đặt TP/SL.
+   --entry-y điều khiển vị trí entry line, cụm nút và tag giá.
+   Vị thế, TP, SL dùng chung kích thước ô (--cell-h, --w-*) nên luôn đều và thẳng hàng. */
+:root {
+  --chart-bg: #0a0e14;
+  --grid: #1b212a;
+  --green: #20a860;
+  --red: #e0301e;
+  --candle-red: #f0453a;
+  --tp: var(--green);   /* TP/SL dùng chung màu với ô PnL */
+  --sl: var(--red);
+  --edge: rgba(255, 255, 255, .85);
+  --close-bg: #c8c8c8;
+  --cell-h: 24px;
+  --line: 1px;      /* MỘT độ dày duy nhất cho viền ngoài + line chia giữa các ô (1px mảnh – 2px dày) */
+  --w-pnl: 108px;
+  --w-qty: 30px;   /* tối thiểu; tự dài ra khi số lượng lên hàng chục */
+  --w-close: 28px;
+  --font: Inter, "Segoe UI", Roboto, system-ui, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 24px; background: #050709; font-family: var(--font); }
+
+.entry-preview {
+  --entry-y: 140px;
+  --tag-w: 85px;
+  --tag-gap: 16px;
+  --tags-right: calc(var(--tag-w) + var(--tag-gap) + 24px);
+  position: relative;
+  width: 870px;
+  max-width: 100%;
+  height: 280px;
+  overflow: hidden;
+  background-color: var(--chart-bg);
+  background-image:
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+    linear-gradient(0deg, var(--grid) 1px, transparent 1px);
+  background-size: 225px 100%, 100% 60px;
+  background-position: 83px 0, 0 0;
+}
+
+/* Nến */
+.candle { position: absolute; left: var(--x); top: var(--t); height: var(--h); width: 19px; }
+.candle::before { content: ""; position: absolute; left: 9px; top: 0; bottom: 0; width: 1px; background: var(--candle-red); }
+.candle span { position: absolute; left: 0; top: var(--bt); height: var(--bh); width: 19px; background: var(--candle-red); }
+
+/* Entry line: nét đứt trơn */
+.entry-line {
+  position: absolute; top: var(--entry-y); left: 0; right: 0; height: 1px;
+  background: repeating-linear-gradient(90deg, rgba(222, 227, 234, .85) 0 7px, transparent 7px 12px);
+}
+
+/* Tag giá (entry / TP / SL) — cùng kích thước */
+.entry-price, .order-price {
+  position: absolute; top: var(--entry-y); right: var(--tag-gap);
+  width: var(--tag-w); height: calc(var(--cell-h) + 2 * var(--line)); margin-top: calc(-0.5 * (var(--cell-h) + 2 * var(--line)));
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font: 500 14px var(--font); font-variant-numeric: tabular-nums;
+}
+.entry-price { background: #5b1812; border: var(--line) solid #d9362b; }
+.entry-preview[data-pnl="win"] .entry-price { background: #0f3d2a; border-color: #2ecc82; }
+
+/* ===== Tag dùng chung: [ PnL | số lượng | × ] ===== */
+.entry-controls {
+  position: absolute; top: var(--entry-y); z-index: 3;
+  right: var(--tags-right); margin-top: calc(-0.5 * (var(--cell-h) + 2 * var(--line)));
+  display: inline-flex;
+}
+.entry-position, .order-tag {
+  position: relative; display: inline-flex; align-items: stretch;
+  height: calc(var(--cell-h) + 2 * var(--line));
+  border-radius: 2px;
+  font: 700 13px var(--font);
+}
+/* Không dùng overflow:hidden (clip anti-alias làm mép nhoè/dày ở pixel lẻ) — bo góc đặt trên ô đầu/cuối */
+.entry-position > :first-child, .order-tag > :first-child { border-radius: 2px 0 0 2px; }
+.entry-position > :last-child, .order-tag > :last-child { border-radius: 0 2px 2px 0; }
+/* Khung đen vẽ 1 lần, phủ lên trên các ô -> viền 4 phía luôn bằng nhau, không bị làm tròn lệch từng ô */
+.entry-position::after, .order-tag::after {
+  content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  border: var(--line) solid #000; border-radius: 2px;
+}
+.entry-position > *, .order-tag > * {
+  display: inline-flex; align-items: center; justify-content: center;
+  align-self: stretch; height: auto; margin: 0; padding: var(--line) 8px; border: 0; border-radius: 0;
+  font: inherit; line-height: 1; white-space: nowrap;
+}
+
+/* Zoom lẻ (125%, 150%...): bo góc làm Chrome vẽ viền bằng path anti-alias -> nhoè. Tắt bo để viền luôn 1 pixel sắc nét. */
+.entry-preview.px-snap .entry-position, .entry-preview.px-snap .order-tag,
+.entry-preview.px-snap .entry-position::after, .entry-preview.px-snap .order-tag::after,
+.entry-preview.px-snap .entry-position > *, .entry-preview.px-snap .order-tag > * { border-radius: 0; }
+
+.entry-pnl, .order-pnl {
+  position: relative; min-width: var(--w-pnl); padding: 0 16px; cursor: ns-resize; touch-action: none; user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+.entry-position > * + *, .order-tag > * + * { border-left: var(--line) solid #000; }
+.entry-quantity, .order-qty { flex: none; min-width: var(--w-qty); padding: 0 8px; }
+.entry-close, .order-close { flex: none; width: var(--w-close); padding: var(--line) 0 0; position: relative; font-size: 0; cursor: pointer; background: var(--close-bg); color: #222; }
+.entry-close:hover, .order-close:hover { background: #fff; }
+/* Dấu × vẽ bằng CSS để luôn nằm chính giữa ô */
+.entry-close::before, .entry-close::after, .order-close::before, .order-close::after {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 12px; height: 1.5px; background: currentColor;
+}
+.entry-close::before, .order-close::before { transform: translate(-50%, -50%) rotate(45deg); }
+.entry-close::after, .order-close::after { transform: translate(-50%, -50%) rotate(-45deg); }
+.entry-position button { cursor: pointer; }
+.entry-position .entry-pnl { cursor: ns-resize; }
+.entry-position button:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+
+/* Màu vị thế */
+.entry-pnl { background: var(--green); color: #fff; }
+.entry-preview[data-pnl="loss"] .entry-pnl { background: var(--red); }
+.entry-quantity { background: var(--green); color: #111; }
+.entry-preview[data-pnl="loss"] .entry-quantity { background: var(--red); }
+
+/* Tay nắm kéo: chấm đen nhỏ */
+.entry-grip, .order-grip {
+  position: absolute; left: 4px; top: 50%; width: 3px; height: 18px; margin: 0; transform: translateY(-50%);
+  background: radial-gradient(circle, #000 .62px, transparent .92px) 0 0 / 3px 3px;
+}
+
+/* Lệnh TP / SL (tạo bằng JS khi kéo) */
+.order { --c: var(--tp); --pbg: #0f3d2a; position: absolute; left: 0; right: 0; top: var(--y); height: 0; z-index: 2; }
+.order.sl { --c: var(--sl); --pbg: #5b1812; }
+.order-line {
+  position: absolute; left: 0; right: 0; top: 0; height: 1px;
+  background: repeating-linear-gradient(90deg, var(--c) 0 6px, transparent 6px 10px);
+}
+.order-tag { position: absolute; top: 0; right: var(--tags-right); margin-top: calc(-0.5 * (var(--cell-h) + 2 * var(--line))); }
+.order-pnl, .order-qty { background: var(--c); }
+.order-pnl { color: #fff; }
+.order-qty { color: #111; }
+.order-price { top: 0; background: var(--pbg); border: var(--line) solid var(--c); }
+
+.entry-preview.closed .entry-controls, .entry-preview.closed .entry-line,
+.entry-preview.closed .entry-price, .entry-preview.closed .order { display: none; }
+body.entry-dragging { cursor: ns-resize; user-select: none; }
+
+@media (max-width: 520px) { .entry-preview { --tags-right: calc(var(--tag-w) + var(--tag-gap) + 8px); } }

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Paper Trading — Entry overlay</title>
+<link rel="stylesheet" href="entry.css">
+</head>
+<body>
+<div class="entry-preview" data-side="long" data-pnl="loss" aria-label="Vị thế Long đang giữ">
+  <div class="candle" style="--x:277px;--t:92px;--h:48px;--bt:0px;--bh:20px" aria-hidden="true"><span></span></div>
+  <div class="candle" style="--x:299px;--t:98px;--h:44px;--bt:13px;--bh:27px" aria-hidden="true"><span></span></div>
+  <div class="candle" style="--x:322px;--t:134px;--h:10px;--bt:3px;--bh:5px" aria-hidden="true"><span></span></div>
+
+  <div class="entry-line" aria-hidden="true"></div>
+  <div class="entry-price" aria-hidden="true">4,763.30</div>
+
+  <div class="entry-controls" role="group" aria-label="Điều khiển vị thế">
+    <div class="entry-position">
+      <button class="entry-pnl" type="button" title="Kéo lên/xuống để đặt TP/SL"><span class="entry-grip" aria-hidden="true"></span><span class="entry-pnl-text">-$2.50</span></button>
+      <button class="entry-quantity" type="button" title="Vị thế Long 1 hợp đồng">1</button>
+      <button class="entry-close" type="button" aria-label="Đóng vị thế" title="Đóng vị thế">×</button>
+    </div>
+  </div>
+</div>
+<script src="entry.js"></script>
+</body>
+</html>
